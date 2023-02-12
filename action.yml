@@ -1,0 +1,53 @@
+name: 'Deploy To Cloud Run'
+description: 'Trigger a deployement to on run'
+inputs:
+  instance_name:
+    description: 'Unique identifier of your service'
+    required: true
+  image_name:
+    description: 'Name of the image to release'
+    required: true
+  gcp_project:
+    description: 'GCP project to run the image on from'
+    required: true
+  gcp_service_account:
+    description: 'GCP Service Account to use for deploying the cloud function'
+    required: true
+  gcp_workload_identity_provider:
+    description: 'Reference to the workload identity provider to use to validate the OIDC token'
+    required: true
+  gcp_region:
+    description: 'GCP region to use'
+    required: true
+    default: 'europe-west9'
+outputs:
+  service_url:
+    description: "URL of the deployed service"
+    value: ${{ steps.cloudrun_release.outputs.url }}
+runs:
+  using: "composite"
+  steps:
+  - id: gcp_auth
+    name: Authenticate to GCP
+    uses: google-github-actions/auth@v1.0.0
+    with:
+      token_format: "access_token"
+      workload_identity_provider: '${{ inputs.gcp_workload_identity_provider }}'
+      service_account: '${{ inputs.gcp_service_account }}'
+  - name: Login to Artifact Registry
+    uses: docker/login-action@v2
+    with:
+      registry: '${{ inputs.gcp_region }}-docker.pkg.dev'
+      username: oauth2accesstoken
+      password: ${{ steps.gcp_auth.outputs.access_token }}
+  - name: Push image
+    shell: bash
+    run: docker push "${{ inputs.image_name }}"
+  - name: Release on Cloud Run
+    id: cloudrun_release
+    uses: google-github-actions/deploy-cloudrun@v1
+    with:
+      service: ${{ inputs.instance_name }}
+      image: ${{ inputs.image_name }}
+      region: ${{ inputs.gcp_region }}
+
